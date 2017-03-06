@@ -3,6 +3,7 @@ import re
 from bs4 import BeautifulSoup
 from datetime import datetime
 from collections import defaultdict
+from locale import setlocale, atof, LC_NUMERIC
 import logging
 from os import environ
 import sys
@@ -124,6 +125,34 @@ def get_questions(profile):
 			break
 	return result
 
+def typecast_deputies(deputies):
+	for deputy in deputies:
+		logging.debug("Typecasting: %s, %s" % (deputy['personal']['last_name'], deputy['personal']['first_name']))
+		# meta
+		deputy['meta']['status'] = int(deputy['meta']['status']) # 2016-10-06 14:40
+		deputy['meta']['edited'] = datetime.strptime(deputy['meta']['edited'], "%Y-%m-%d %H:%M")
+		# personal
+		deputy['personal']['birthyear'] = int(deputy['personal']['birthyear'])
+		# parliament
+		if len(deputy['parliament']) > 0:
+			try:
+				deputy['parliament']['joined'] = datetime.strptime(deputy['parliament']['joined'], "%Y-%m-%d")
+			except ValueError:
+				pass
+			try:
+				deputy['parliament']['retired'] = datetime.strptime(deputy['parliament']['retired'], "%Y-%m-%d")
+			except ValueError:
+				pass
+		# constituency
+		if len(deputy['constituency']) > 0:
+			deputy['constituency']['number'] = int(deputy['constituency']['number'])
+			if deputy['constituency']['result'] != None:
+				deputy['constituency']['result'] = float(atof(deputy['constituency']['result']))
+		# list
+		if len(deputy['list']) > 0:
+			if deputy['list']['position'] != None:
+				deputy['list']['position'] = int(deputy['list']['position'])
+
 def parliaments2mongo(db, wished_parliaments):
 	logging.info("Getting parliaments.")
 	parliaments = [x for x in get_parliaments() if x['name'] in wished_parliaments]
@@ -132,7 +161,8 @@ def parliaments2mongo(db, wished_parliaments):
 	logging.info("Getting parliaments. (done)")
 	return
 
-def deputies2mongo(db, parliaments):
+def deputies2mongo(db, parliaments, locale="de_DE.utf-8"):
+	setlocale(LC_NUMERIC, locale)
 	for parliament in parliaments:
 		logging.info("Getting deputies of: %s %s" % (parliament['name'], parliament['uuid']))
 		try:
@@ -140,6 +170,7 @@ def deputies2mongo(db, parliaments):
 		except requests.exceptions.HTTPError:
 			logging.error("404 not found")
 		else:
+			typecast_deputies(deputies)
 			db.profiles.insert_many(deputies)
 		logging.info("Getting deputies of: %s %s (done)" % (parliament['name'], parliament['uuid']))
 	return
