@@ -223,12 +223,12 @@ def q_a2mongo(db, profiles):
 	for profile in profiles:
 		if DEBUG:
 			logging.debug("%i %s, %s" % (i, profile['personal']['last_name'], profile['personal']['first_name']))
-			i += 1 # TODO debug fnord mit 731 als Endzahl
+			i += 1
 
 		questions = get_questions(profile)
 		profile['questions'] = questions
-		db.profiles.find_one_and_replace({"meta.uuid": profile['meta']['uuid']}, profile)
 		logging.debug("Updated q/a counter: %i questions, %i answers" % (len(questions), answers))
+		db.profiles.update_one({"meta.uuid": profile['meta']['uuid']}, {"$set": profile})
 
 		logging.debug("    %s" % profile['meta']['uuid'])
 	logging.info("Getting Q/A of the given profiles. (done)")
@@ -278,13 +278,13 @@ if __name__ == '__main__':
 		# 'Thüringen'
 	]
 	parliaments2mongo(db, wished_parliaments)
+	parliaments = list(db.parliaments.find(modifiers={"$snapshot": True}))
 
 	# Profiles of Deputies
-	deputies2mongo(db, db.parliaments.find())
+	deputies2mongo(db, parliaments)
 
 	# polls of Deputies
-	polls2mongo(db, db.parliaments.find())
+	polls2mongo(db, parliaments)
 
 	# Q/A of Profiles
-	q_a2mongo(db, db.profiles.find())
-	# q_a2mongo(db, db.profiles.find({"personal.last_name": "Müller", "personal.first_name": "Norbert"}))
+	q_a2mongo(db, db.profiles.find(modifiers={"$snapshot": True}))
