@@ -227,6 +227,13 @@ def q_a2mongo(db, profiles):
 
 		questions = get_questions(profile)
 		profile['questions'] = questions
+		profile['meta']['questions'] = len(questions)
+		answers = 0
+		for question in questions:
+			for answer in question['answers']:
+				if len(answer) > 0:
+					answers += 1
+		profile['meta']['answers'] = answers
 		logging.debug("Updated q/a counter: %i questions, %i answers" % (len(questions), answers))
 		db.profiles.update_one({"meta.uuid": profile['meta']['uuid']}, {"$set": profile})
 
