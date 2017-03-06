@@ -3,6 +3,9 @@ import re
 from bs4 import BeautifulSoup
 from datetime import datetime
 from collections import defaultdict
+import logging
+from os import environ
+import sys
 from pprint import pprint
 import json
 from pymongo import MongoClient
@@ -85,8 +88,8 @@ def get_questions(profile):
 	result = []
 	page = 1
 	while True:
+		logging.debug("http://www.abgeordnetenwatch.de/profile/public_questions.php?build=1&num=%i&cmd=%i&id=%i" % (page, cmd, id))
 		r = requests.get("http://www.abgeordnetenwatch.de/profile/public_questions.php?build=1&num=%i&cmd=%i&id=%i" % (page, cmd, id))
-		print("http://www.abgeordnetenwatch.de/profile/public_questions.php?build=1&num=%i&cmd=%i&id=%i" % (page, cmd, id))
 		r.encoding = 'UTF-8'
 		s = BeautifulSoup(r.text, "html.parser")
 		if page == 1:
@@ -119,41 +122,38 @@ def get_questions(profile):
 			page += 1
 		else:
 			break
-
-	# TODO muss wieder raus, nur testweise
-	with open('dump_answers.json', 'w') as f:
-		pprint(result, f)
-
 	return result
 
 def parliaments2mongo(db, wished_parliaments):
+	logging.info("Getting parliaments.")
 	parliaments = [x for x in get_parliaments() if x['name'] in wished_parliaments]
 
 	db.parliaments.insert_many(parliaments)
+	logging.info("Getting parliaments. (done)")
 	return
 
 def deputies2mongo(db, parliaments):
 	for parliament in parliaments:
-		print(parliament['name'], parliament['uuid'])
+		logging.info("Getting deputies of: %s %s" % (parliament['name'], parliament['uuid']))
 		try:
 			deputies = get_deputies(parliament['uuid'])
 		except requests.exceptions.HTTPError:
-			print("404 not found")
+			logging.error("404 not found")
 		else:
 			db.profiles.insert_many(deputies)
-		print(parliament['name'], parliament['uuid'])
+		logging.info("Getting deputies of: %s %s (done)" % (parliament['name'], parliament['uuid']))
 	return
 
 def polls2mongo(db, parliaments):
 	for parliament in parliaments:
-		print(parliament['name'], parliament['uuid'])
+		logging.info("Getting Polls of: %s %s" % (parliament['name'], parliament['uuid']))
 		try:
 			polls = get_polls(parliament['uuid'])
 		except requests.exceptions.HTTPError:
-			print("404 not found")
+			logging.error("404 not found")
 		else:
 			db.polls.insert_many(polls)
-		print(parliament['name'], parliament['uuid'])
+		logging.info("Getting Polls of: %s %s (done)" % (parliament['name'], parliament['uuid']))
 	update_mongo_votes_meta(db)
 	return
 
@@ -178,25 +178,48 @@ def update_mongo_votes_meta(db):
 	for uuid in d:
 		profile = db.profiles.find_one({"meta.uuid": uuid})
 		if profile == None:
-			print("No profile found for uuid: %s, name: %s" % (uuid, n[uuid]))
+			logging.warning("No profile found for uuid: %s, name: %s" % (uuid, n[uuid]))
 		else:
 			profile['votes'] = d[uuid]
 			db.profiles.save(profile)
 
 def q_a2mongo(db, profiles):
-	i = 1 # TODO debug entfernen
+	logging.info("Getting Q/A of the given profiles.")
+	logging.info("This takes a while. Please be patient and wait ☺")
+	DEBUG = logging.getLogger().getEffectiveLevel() == logging.DEBUG
+	if DEBUG:
+		i = 1
 	for profile in profiles:
-		# pprint(profile)
-		print(i, profile['personal']['last_name']+", "+profile['personal']['first_name'])
-		i += 1 # TODO debug fnord mit 731 als Endzahl
+		if DEBUG:
+			logging.debug("%i %s, %s" % (i, profile['personal']['last_name'], profile['personal']['first_name']))
+			i += 1 # TODO debug fnord mit 731 als Endzahl
 
 		questions = get_questions(profile)
 		profile['questions'] = questions
 		db.profiles.find_one_and_replace({"meta.uuid": profile['meta']['uuid']}, profile)
+		logging.debug("Updated q/a counter: %i questions, %i answers" % (len(questions), answers))
 
-		print("    ", profile['meta']['uuid'])
+		logging.debug("    %s" % profile['meta']['uuid'])
+	logging.info("Getting Q/A of the given profiles. (done)")
+
+def initialize_logging(level=None, defaultLevel="INFO", datefmt=None):
+	if not level:
+		gettrace = getattr(sys, 'gettrace', None)
+		if environ.get('LOG_LEVEL') in logging._nameToLevel.keys():
+			level = environ.get('LOG_LEVEL')
+		elif gettrace is not None:
+			if gettrace():
+				level = "DEBUG"
+			else:
+				level = defaultLevel
+		else:
+			level = defaultLevel
+	logging.basicConfig(format='%(asctime)s %(message)s', datefmt=datefmt, level=level)
 
 if __name__ == '__main__':
+	# logging init
+	initialize_logging()
+
 	# TODO write function for mongodb connection
 	mongodb = MongoClient()
 	db = mongodb.test_db
