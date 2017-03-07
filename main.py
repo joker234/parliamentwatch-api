@@ -129,6 +129,62 @@ def get_questions(profile):
 			break
 	return result
 
+# Output format: # TODO
+# [
+# 	{
+#		"title" : "Ausschussname",
+#		"url" : "parliamentwatch_url",
+#		"regular_member" : bool,
+#		"chair" : bool,
+#		"vice-chair" : bool,
+#	}
+# ]
+def get_committees(profile):
+	if type(profile) == dict:
+		profile_url = profile['meta']['url']
+	else:
+		profile_url = profile
+	cmd, id = get_cmd_id(profile_url,profile['parliament'])
+	logging.debug("%s/profile/parlament.php?build=1&show=ausschussmitgliedschaften&cmd=%i&id=%i" % (BASE_URL_HTTP, cmd, id))
+	r = requests.get("%s/profile/parlament.php?build=1&show=ausschussmitgliedschaften&cmd=%i&id=%i" % (BASE_URL_HTTP, cmd, id))
+	r.encoding = 'UTF-8'
+	s = BeautifulSoup(r.text, "lxml")
+
+	result = []
+	committees = s.find("div", class_="ausschussmitgliedschaften")
+	if committees == None:
+		return []
+	for committee in committees.find_all("div", class_="entry clearfix"):
+		res_c = {}
+		title_object = committee.find("div", class_="title_data").text
+		if title_object == "Ordentliches Mitglied":
+			res_c['regular_member'] = True
+			res_c['vice-chair'] = False
+			res_c['chair'] = False
+		elif title_object == "Stellvertretendes Mitglied":
+			res_c['regular_member'] = False
+			res_c['vice-chair'] = False
+			res_c['chair'] = False
+		elif title_object == "Vorsitz":
+			res_c['regular_member'] = True
+			res_c['vice-chair'] = False
+			res_c['chair'] = True
+		elif title_object == "Stellvertretender Vorsitz":
+			res_c['regular_member'] = True
+			res_c['vice-chair'] = True
+			res_c['chair'] = False
+		else:
+			raise ValueError
+		link = list(committee.find("div", class_="entry_title").children)
+		if len(link) > 1:
+			raise ValueError
+		link = link[0]
+		res_c['url'] = BASE_URL_HTTPS+"/"+link['href']
+		res_c['title'] = link.text
+		result.append(res_c)
+
+	return result
+
 def typecast_deputies(deputies):
 	for deputy in deputies:
 		logging.debug("Typecasting: %s, %s" % (deputy['personal']['last_name'], deputy['personal']['first_name']))
@@ -244,6 +300,24 @@ def q_a2mongo(db, profiles):
 		logging.debug("    %s" % profile['meta']['uuid'])
 	logging.info("Getting Q/A of the given profiles. (done)")
 
+def committees2mongo(db, profiles):
+	logging.info("Getting committees of the given profiles.")
+	logging.info("This takes a while. Please be patient and wait ☺")
+	DEBUG = logging.getLogger().getEffectiveLevel() == logging.DEBUG
+	if DEBUG:
+		i = 1
+	for profile in profiles:
+		if DEBUG:
+			logging.debug("%i %s, %s" % (i, profile['personal']['last_name'], profile['personal']['first_name']))
+			i += 1
+
+		committees = get_committees(profile)
+		profile['committees'] = committees
+		db.profiles.update_one({"meta.uuid": profile['meta']['uuid']}, {"$set": profile})
+
+		logging.debug("    %s" % profile['meta']['uuid'])
+	logging.info("Getting committees of the given profiles. (done)")
+
 def initialize_logging(level=None, defaultLevel="INFO", datefmt=None):
 	if not level:
 		gettrace = getattr(sys, 'gettrace', None)
@@ -299,3 +373,6 @@ if __name__ == '__main__':
 
 	# Q/A of Profiles
 	q_a2mongo(db, db.profiles.find(modifiers={"$snapshot": True}))
+
+	# Committees of Profiles
+	committees2mongo(db, db.profiles.find(modifiers={"$snapshot": True}))
