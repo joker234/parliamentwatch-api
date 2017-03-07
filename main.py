@@ -11,27 +11,32 @@ from pprint import pprint
 import json
 from pymongo import MongoClient
 
+global BASE_URL_HTTPS
+BASE_URL_HTTPS = "https://www.abgeordnetenwatch.de" # TODO Variable an sinnvolle stelle
+global BASE_URL_HTTP
+BASE_URL_HTTP = "http://www.abgeordnetenwatch.de" # TODO Variable an sinnvolle stelle
+
 def get_parliaments():
-	return requests.get("https://abgeordnetenwatch.de/api/parliaments.json").json()['parliaments'] # TODO URL auslagern
+	return requests.get("%s/api/parliaments.json" % BASE_URL_HTTPS).json()['parliaments']
 
 def get_profiles(parliament):
 	if type(parliament) == dict:
 		parliament = parliament['uuid']
-	r = requests.get("https://www.abgeordnetenwatch.de/api/parliament/%s/profiles.json" % parliament) # TODO URL auslagern
+	r = requests.get("%s/api/parliament/%s/profiles.json" % (BASE_URL_HTTPS, parliament)) # TODO URL auslagern
 	r.raise_for_status()
 	return r.json()['profiles']
 
 def get_deputies(parliament):
 	if type(parliament) == dict:
 		parliament = parliament['uuid']
-	r = requests.get("https://www.abgeordnetenwatch.de/api/parliament/%s/deputies.json" % parliament) # TODO URL auslagern
+	r = requests.get("%s/api/parliament/%s/deputies.json" % (BASE_URL_HTTPS, parliament)) # TODO URL auslagern
 	r.raise_for_status()
 	return r.json()['profiles']
 
 def get_polls(parliament):
 	if type(parliament) == dict:
 		parliament = parliament['uuid']
-	r = requests.get("https://www.abgeordnetenwatch.de/api/parliament/%s/polls.json" % parliament) # TODO URL auslagern
+	r = requests.get("%s/api/parliament/%s/polls.json" % (BASE_URL_HTTPS, parliament)) # TODO URL auslagern
 	r.raise_for_status()
 	return r.json()['polls']
 
@@ -43,8 +48,7 @@ def get_alternativ_profile_url(r,parliament):
 		inner_legend = l.fieldset.legend
 		if(inner_legend.span.text == parliament['name']):
 			relative_url = inner_legend.next_sibling.next_sibling.find("a", class_="link-profile")['href']
-			base_url = "https://www.abgeordnetenwatch.de" # TODO auslagern
-			return base_url+relative_url
+			return BASE_URL_HTTPS+relative_url
 
 def get_cmd_id(profile_url,parliament):
 	r = requests.get(profile_url, allow_redirects=False)
@@ -89,8 +93,8 @@ def get_questions(profile):
 	result = []
 	page = 1
 	while True:
-		logging.debug("http://www.abgeordnetenwatch.de/profile/public_questions.php?build=1&num=%i&cmd=%i&id=%i" % (page, cmd, id))
-		r = requests.get("http://www.abgeordnetenwatch.de/profile/public_questions.php?build=1&num=%i&cmd=%i&id=%i" % (page, cmd, id))
+		logging.debug("%s/profile/public_questions.php?build=1&num=%i&cmd=%i&id=%i" % (BASE_URL_HTTP, page, cmd, id))
+		r = requests.get("%s/profile/public_questions.php?build=1&num=%i&cmd=%i&id=%i" % (BASE_URL_HTTP, page, cmd, id))
 		r.encoding = 'UTF-8'
 		s = BeautifulSoup(r.text, "html.parser")
 		if page == 1:
