@@ -251,7 +251,7 @@ def polls2mongo(db, parliaments):
 def update_mongo_votes_meta(db):
 	d = defaultdict(lambda: defaultdict(int))
 	n = {}
-	for poll in db.polls.find():
+	for poll in db.polls.find(modifiers={"$snapshot": True}):
 		for deputy in poll['votes']:
 			uuid = deputy['uuid']
 			vote = deputy['vote']
@@ -266,6 +266,9 @@ def update_mongo_votes_meta(db):
 				d[uuid]['missed'] += 1
 			else:
 				raise ValueError
+		if type(poll['date']) == str:
+			poll['date'] = datetime.strptime(poll['date'], "%Y-%m-%d")
+			db.polls.update_one({"_id": poll['_id']}, {"$set": poll})
 	for uuid in d:
 		profile = db.profiles.find_one({"meta.uuid": uuid})
 		if profile == None:
@@ -295,7 +298,7 @@ def q_a2mongo(db, profiles):
 					answers += 1
 		profile['meta']['answers'] = answers
 		logging.debug("Updated q/a counter: %i questions, %i answers" % (len(questions), answers))
-		db.profiles.update_one({"meta.uuid": profile['meta']['uuid']}, {"$set": profile})
+		db.profiles.update_one({"_id": profile['_id']}, {"$set": profile})
 
 		logging.debug("    %s" % profile['meta']['uuid'])
 	logging.info("Getting Q/A of the given profiles. (done)")
